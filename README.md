@@ -1,206 +1,162 @@
-# Project-8: Designing Adaptive Auto-Scaling Architecture for HA and Cost Optimization
+```markdown
+# Project: Designing Adaptive Auto-Scaling Architecture for High Availability and Cost Optimization
 
-## GitHub Repo
+**GitHub Repository**  
 https://github.com/DinukaSanjana/Designing-Adaptive-Auto-Scaling-Architecture-for-HA-and-cost-optimisat.git
 
-## Project Purposes
-1. High Availability (HA): Ensure the application is always available to users. If one instance fails, others automatically take over.
-2. Cost Optimization: Avoid unnecessary costs by automatically reducing instances when traffic is low and increasing when traffic is high.
+## How High Availability and Cost Optimization Are Achieved
+
+| Goal                  | How It Is Achieved                                                                 |
+|-----------------------|-------------------------------------------------------------------------------------|
+| **High Availability** | • Multi-AZ deployment  <br>• Application Load Balancer distributes traffic  <br>• Auto Scaling Group maintains desired number of healthy instances  <br>• If an instance fails or is terminated, ASG automatically launches a new one and ALB routes traffic only to healthy instances |
+| **Cost Optimization** | • Auto Scaling Group scales out only when traffic increases  <br>• Scales in automatically when traffic decreases  <br>• Minimum 2 instances (for HA), but never runs more than needed  <br>• Pay only for the instances actually required |
+
+**Traffic Flow**  
+`User Traffic → Application Load Balancer → Target Group → Healthy EC2 Instances (Docker containers)`  
+Auto Scaling Group continuously monitors instance health and metrics, adding or removing instances as needed.
 
 ## Technologies Used
-- Amazon EC2 (Elastic Compute Cloud): Virtual servers for the application.
-- Docker: Containerize the Node.js application with dependencies (Node 14, express, mysql).
-- Amazon Machine Image (AMI): Snapshot of configured EC2 instance for auto scaling.
-- Application Load Balancer (ALB): Distribute user traffic across EC2 instances.
-- AWS Auto Scaling Group (ASG): Automatically scale EC2 instances based on CPU, network traffic.
-- Amazon RDS (Relational Database Service): Managed MySQL database connected to all instances.
+- EC2 – Compute instances
+- Docker – Container runtime
+- AMI – Golden image with app + Docker pre-installed
+- ALB (Application Load Balancer) – Distributes incoming traffic
+- ASG (Auto Scaling Group) – Maintains desired count and auto-scales
+- RDS (MySQL) – Centralized managed database
 
-## Lesson-by-Lesson Workflow
+## Detailed Implementation Steps
 
-### Lesson 1: Introduction
-Introduce HA and Cost Optimization architecture. Deploy EC2 instances in Multi-AZ within VPC, fronted by ALB and managed by ASG.
+### 1. Create RDS MySQL Database
+- Launch RDS MySQL instance
+- Copy the Endpoint
+- Edit `app.js` → “Create connection to MySQL” section → hardcode RDS endpoint, username, password, database
 
-### Lesson 2: App Explanation
-The application is a simple Node.js CRUD app using express and mysql dependencies, running on port 3000, connected to external AWS RDS database. Dockerfile provided for deployment.
+### 2. Add Inbound Rule to RDS Security Group
+- Type: MySQL/Aurora (port 3306)
+- Source: Security Group of the EC2 instances (recommended)  
+  → Allows EC2 instances to connect to RDS
 
-### Lesson 3: EC2 App Setup
-1. Launch Instance: Ubuntu EC2 instance.
-2. Security Group: Open ports 3000, SSH, HTTP, HTTPS.
-3. Install Docker: On EC2 instance.
-4. Get App: Clone source code to instance.
-5. Build & Run: Use Dockerfile to build image, run container on port 3000.
-6. Test: Access via public IP and port 3000.
-
-### Lesson 4: AMI and ELB Setup
-1. Create AMI: From configured EC2 instance, name "Crud-ami".
-2. Create Target Group (TG): Name "Crud-TG", target port 3000, with health checks.
-3. Create Load Balancer (ALB): Name "Crud-ELB", internet-facing, listen on port 80, forward to TG.
-
-### Lesson 5: ASG Setup
-1. Create Launch Template: Name "Crud Launch template".
-   - AMI: Use "Crud-ami".
-   - Instance Type: t2.medium.
-   - User Data: Script to run docker container on boot.
-2. Create Auto Scaling Group (ASG): Name "Crud-ASG".
-   - Use Launch Template.
-   - Attach to "Crud-TG".
-   - Group Size: Min 2, Desired 3, Max 5.
-   - Scaling Policy: Scale out if CPU >50% or high network out.
-3. Test: ASG launches 3 instances, registers to TG, access via ALB DNS.
-
-### Lesson 6: Disaster Simulation
-1. Simulate Disaster: Manually terminate instances.
-2. Automatic Recovery:
-   - ALB detects unhealthy instances.
-   - ASG launches new instances to maintain desired capacity.
-   - New instances register as healthy and handle traffic.
-3. Conclusion: System self-heals with minimal downtime.
-
-## Services Used
-- EC2
-- ASG
-- DB (RDS)
-- LoadBalancer
-
-## Create RDS - MySQL Database
-Copy the Endpoint from Amazon RDS > Databases > testdb-1 > Connectivity & security.
-
-Hardcode endpoint URL to app.js in "Create connection to MySQL section".
-
-## Add Dbeaver IP to Database Security Group
-Add inbound rule for database security group with computer's IP.
-
-## Create EC2 Instance
-- Name: Crud-app
-- OS: ubuntu
+### 3. Create EC2 Instance (Golden Instance)
+- AMI: Ubuntu
 - Type: t2.medium
-- Key pair: Proceed without
-- Network Settings:
-  - Firewall (security groups): Create security group
-  - Allow SSH from anywhere
-  - Allow HTTPS from internet
-  - Allow HTTP from internet
-- Inbound Security Group Rules:
-  - Add rule: Custom TCP, Port 3000, Source Anywhere
-- Configure Storage: 1 x 12 GiB
-- Launch Instance
+- Security Group Inbound Rules:
+  - SSH (22) – My IP
+  - HTTP (80) – Anywhere
+  - HTTPS (443) – Anywhere
+  - Custom TCP 3000 – Anywhere (0.0.0.0/0)
 
-## Connect to Instance
-Install Docker inside instance.
+**Why open port 3000 to Anywhere?**  
+Because initially we test the app directly on the instance (`PublicIP:3000`). Later ALB will use the same port, and the same SG is reused.
 
-Install "Linux post-installation steps for Docker Engine".
+### 4. Connect to EC2 Instance & Run Application
+```bash
+# Install Docker and post-install steps
+sudo apt update && sudo apt install docker.io -y
+sudo usermod -aG docker ubuntu
 
-Close and reconnect to instance.
+# Clone repository
+git clone https://github.com/MuhmmadAyan/crud-app.git
+cd crud-app
+cp -r * ../   # if needed to move files
 
-## Commands in Instance
-whoami  
-ubuntu  
+# Build Docker image
+docker build -t crud-image .
 
-Clone the repo:  
-git clone https://github.com/MuhmmadAyan/crud-app.git  
+# Run container (auto-restart on reboot)
+docker run --restart=always -d -p 3000:3000 crud-image
 
-cd crud-app  
-cp -r * ../  
+# Verify container is running
+docker ps
+```
 
-docker build -t crud-image .  
-docker images  
+Test in browser: `http://<EC2-Public-IP>:3000`
 
-docker run --restart=always -d -p 3000:3000 crud-image  
-docker ps  
+### 5. Fix RDS Connection (if needed)
+```bash
+# Stop old container
+docker stop <container-id>
 
-Copy public IP and paste on browser with port: 13.234.32.214:3000
+# Run again with same command
+docker run --restart=always -d -p 3000:3000 crud-image
+```
 
-## AMI (Amazon Machine Image) and ELB (Elastic Load Balancer)
-Instance > crud-app > Actions > Image and Template > Create image  
-- crud-ami  
-- crud-ami  
-- [ ] Reboot Instance (Uncheck)  
-Create Image  
+### 6. Create AMI (Golden Image)
+EC2 Console → Select running instance → Actions → Image and templates → Create image  
+- Image name: `crud-ami`  
+- Uncheck “No reboot” if you want faster creation (optional)
 
-Image shows in EC2 > AMIs
+### 7. Create Application Load Balancer & Target Group
+- Load Balancer → Create ALB
+- Name: `crud-elb`
+- Listener: HTTP :80
+- Create Target Group:
+  - Name: `crud-tg`
+  - Protocol: HTTP port 3000
+  - Health check interval: 6s
+- Register the current instance (temporary)
+- Create Load Balancer
 
-## Creating the Load Balancer
-Go to EC2 > Load Balancers > Create Load Balancer  
-Application Load Balancer > Create  
+Now application is accessible via ALB DNS name (no port needed)
 
-Load Balancer Name: crud-elb  
-VPC: Default VPC  
-Availability Zones: Select all  
+### 8. Create Launch Template
+- Name: `crud-launch-template`
+- AMI: `crud-ami` (created in step 6)
+- Instance type: t2.medium
+- Same Security Group as before
+- Advanced → User Data:
+```bash
+#!/bin/bash
+docker run --restart=always -d -p 3000:3000 crud-image
+```
+**Purpose of User Data:** When ASG launches new instances from the AMI, the Docker container is not running by default. This script automatically starts the container on every new instance boot.
 
-Select security group from EC2 instance (allows port 3000)  
+### 9. Create Auto Scaling Group
+EC2 → Auto Scaling Groups → Create Auto Scaling Group
+- Name: `crud-asg`
+- Launch template: `crud-launch-template`
+- VPC + multiple Availability Zones
+- Attach to existing load balancer → Target Group: `crud-tg`
+- Health checks: Enable ELB health checks + Grace period 30s
+- Desired capacity: 3
+- Minimum: 2
+- Maximum: 5
+- Scaling policy: Target tracking → Average Network Out → Target value: 50
 
-Listeners and Routing:  
-HTTP 80  
+### 10. Monitoring & Verification
+- Auto Scaling Group → Activity tab  
+  Shows instance launches, terminations, health status
+- EC2 → Instances  
+  Shows 3 running instances launched by ASG
 
-[Create Target Group]  
-Target group name: crud-tg  
-Protocol: HTTP > 3000  
-Advanced health check settings: Interval 6s  
+### 11. Disaster Recovery / Self-Healing Test
+- Manually terminate 1 or all 3 instances
+- ASG detects unhealthy/missing instances
+- Automatically launches new instances from `crud-ami` + runs User Data script
+- New instances register to Target Group → become healthy
+- ALB resumes routing traffic → Application stays available
 
-Next  
-Register targets: Available instances > Select crud-app instance  
-[Include as pending below]  
-[Create Target Group]  
+**Result:** Zero-downtime (or <1 minute) even when instances are deleted.
 
-Refresh and select created Target Group  
-[Create Load Balancer]
+## Final Architecture
+```
+Internet
+   ↓
+Application Load Balancer (HTTP:80)
+   ↓
+Target Group (HTTP:3000 + Health Checks)
+   ↓
+Auto Scaling Group (Min 2, Desired 3, Max 5)
+   ↓
+EC2 Instances (Docker → Node.js CRUD App)
+   ↓
+Amazon RDS MySQL (shared database)
+```
 
-## ASG Setup - Auto Scaling Group
-Open application through Load Balancer DNS Name: crud-elb-577084204.us-east-1.elb.amazonaws.com  
+**Project Successfully Demonstrates**
+- High Availability across multiple AZs
+- Automatic scaling based on load
+- Self-healing on failure
+- Cost optimization by scaling in/out
+- Fully reproducible infrastructure using AMI + Launch Template + User Data
 
-EC2 > Auto Scaling Group > Create Auto Scaling group  
-crud-ASG  
-
-Create Launch Template  
-crud-launch-template  
-crud-launch-template  
-
-Application and OS Images: My AMIs > Own by me > Select "crud-ami"  
-Instance type: t2.medium  
-Key Pair: KEY_NAME  
-Select previous security group  
-
-Advanced details: User data - optional  
-#!/bin/bash  
-docker run --restart=always -d -p 3000:3000 crud-image  
-
-[Create launch template]  
-
-Launch Template: Select created one  
-Next  
-
-Network: Select 3 availability zones  
-Next  
-
-Load Balancing: Attach to existing load balancer  
-Choose from load balancer target group: crud-TG  
-Health Checks: Turn on Elastic Load Balancing health checks  
-Health grace period: 30s  
-Next  
-
-Configure group size and scaling:  
-Desired capacity: 3  
-Min: 2  
-Max: 5  
-Automatic scaling: Target tracking scaling policy  
-Metric Type: Average network out (byte)  
-Target value: 50  
-Instance warmup: 30  
-Next  
-
-Add notifications - optional  
-Next  
-
-Add Tags [optional]  
-Review  
-[Create Auto Scaling group]  
-
-Auto scaling group > activity  
-EC2 > Instances  
-
-## Disaster Simulation
-Delete all instances.  
-They recreate automatically.  
-Auto Scaling Group > Activity shows instances.  
-
-Finished.
+**Completed**
+```
