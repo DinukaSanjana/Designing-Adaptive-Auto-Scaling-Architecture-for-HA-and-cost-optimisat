@@ -1,4 +1,3 @@
-```markdown
 # Project: Designing Adaptive Auto-Scaling Architecture for High Availability and Cost Optimization
 
 **GitHub Repository**  
